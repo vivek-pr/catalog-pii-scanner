@@ -276,19 +276,18 @@ class UnityCatalogClient:
                 changed = True
 
             if append_comment is not None:
-                # Read existing
+                # Read existing, detecting paramstyle (qmark '?' or format '%s')
                 get_q = (
                     "SELECT comment FROM system.information_schema.columns "
                     "WHERE table_catalog=? AND table_schema=? AND table_name=? AND column_name=?"
                 )
-                # Support both DB-API styles: qmark or format, try qmark first
+                param_style = "qmark"
                 try:
                     cur.execute(get_q, (catalog, schema, table, column))
-                except Exception:  # pragma: no cover - alt style fallback in tests
-                    cur.execute(
-                        get_q.replace("?", "%s"),
-                        (catalog, schema, table, column),  # type: ignore[arg-type]
-                    )
+                except Exception:  # pragma: no cover - alternate paramstyle
+                    get_q_fmt = get_q.replace("?", "%s")
+                    cur.execute(get_q_fmt, (catalog, schema, table, column))
+                    param_style = "format"
                 row = cur.fetchone()
                 existing_comment = (row[0] if row else None) or ""
                 new_comment = existing_comment
@@ -297,15 +296,17 @@ class UnityCatalogClient:
                         existing_comment + (" " if existing_comment else "") + append_comment
                     )[:1024]
                 if new_comment != existing_comment:
-                    cur.execute(
-                        (
-                            "COMMENT ON COLUMN "
-                            f"{catalog}.{schema}.{table}.{column} IS ?".replace("?", "%s")
-                            if "%s" in get_q
-                            else f"COMMENT ON COLUMN {catalog}.{schema}.{table}.{column} IS ?"
-                        ),
-                        (new_comment,),
-                    )
+                    comment_prefix = f"COMMENT ON COLUMN {catalog}.{schema}.{table}.{column} IS "
+                    try:
+                        if param_style == "qmark":
+                            cur.execute(comment_prefix + "?", (new_comment,))
+                        else:
+                            cur.execute(comment_prefix + "%s", (new_comment,))
+                    except Exception:  # pragma: no cover - final fallback try both
+                        try:
+                            cur.execute(comment_prefix + "%s", (new_comment,))
+                        except Exception:
+                            cur.execute(comment_prefix + "?", (new_comment,))
                     changed = True
             return changed
 
