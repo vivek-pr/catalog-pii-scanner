@@ -9,6 +9,7 @@ import uvicorn
 from . import __version__
 from .config import validate_config_file
 from .connectors.glue import GlueCatalogClient
+from .connectors.hms import HiveMetastoreClient
 from .connectors.unity import UnityCatalogClient
 from .datasets import generate_synthetic, load_jsonl, save_jsonl
 from .db import (
@@ -97,25 +98,25 @@ def scan(
         # Print summary JSON to stdout
         out = [
             {
-                "ref": c.ref,
-                "database": c.database,
-                "table": c.table,
-                "column": c.name,
-                "type": c.type,
-                "comment": c.comment,
-                "parameters": c.parameters,
+                "ref": gc.ref,
+                "database": gc.database,
+                "table": gc.table,
+                "column": gc.name,
+                "type": gc.type,
+                "comment": gc.comment,
+                "parameters": gc.parameters,
             }
-            for c in glue_cols
+            for gc in glue_cols
         ]
         typer.echo(json.dumps({"count": len(out), "columns": out}, indent=2))
 
         if apply:
             # Idempotent tag back per column
-            for c in glue_cols:
+            for gc in glue_cols:
                 glue_client.update_column_tags(
-                    database=c.database,
-                    table=c.table,
-                    column=c.name,
+                    database=gc.database,
+                    table=gc.table,
+                    column=gc.name,
                     pii=True,
                     pii_types=type_ or ["PII"],
                     append_comment=append_comment,
@@ -164,6 +165,45 @@ def scan(
                     schema=uc.schema,
                     table=uc.table,
                     column=uc.name,
+                    pii=True,
+                    pii_types=type_ or ["PII"],
+                    append_comment=append_comment,
+                )
+        return
+
+    if target and target.startswith("hms://"):
+        # Enumerate Hive Metastore via Thrift
+        pat = target[len("hms://") :].strip()
+        parts = [p for p in pat.split("/") if p]
+        db_pats = ["*"]
+        tbl_pats = ["*"]
+        if len(parts) >= 1 and parts[0] not in {"*", ""}:
+            db_pats = [parts[0]]
+        if len(parts) >= 2 and parts[1] not in {"*", ""}:
+            tbl_pats = [parts[1]]
+
+        hms_client = HiveMetastoreClient()
+        hms_cols = list(hms_client.iter_columns(db_patterns=db_pats, table_patterns=tbl_pats))
+        out = [
+            {
+                "ref": hc.ref,
+                "database": hc.database,
+                "table": hc.table,
+                "column": hc.name,
+                "type": hc.type,
+                "comment": hc.comment,
+                "properties": hc.properties,
+            }
+            for hc in hms_cols
+        ]
+        typer.echo(json.dumps({"count": len(out), "columns": out}, indent=2))
+
+        if apply:
+            for hc in hms_cols:
+                hms_client.update_column_tags(
+                    database=hc.database,
+                    table=hc.table,
+                    column=hc.name,
                     pii=True,
                     pii_types=type_ or ["PII"],
                     append_comment=append_comment,
