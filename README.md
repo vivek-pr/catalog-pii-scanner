@@ -317,12 +317,3 @@ A: Yes, if you sample too little or names are obfuscated. That’s why we combin
 A: No. It stores **classifications & metrics only**.
 
 ```
-
----
-
-If you want, I can also generate:
-- `CONTRIBUTING.md`, 
-- a stub `config/config.yaml`, 
-- `Makefile`, and 
-- a minimal `FastAPI` + `Typer` scaffold to drop into the repo.
-```
