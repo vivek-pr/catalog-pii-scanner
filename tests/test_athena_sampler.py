@@ -42,6 +42,7 @@ def test_athena_sampler_samples_with_not_ready_then_success() -> None:
         initial_backoff=0.01,
         max_backoff=0.05,
         max_retries=2,
+        create_temp_database=False,
     )
     s_ath.add_response(
         "create_work_group",
@@ -106,6 +107,16 @@ def test_athena_sampler_samples_with_not_ready_then_success() -> None:
             }
         },
         expected_params={"QueryExecutionId": "q-123"},
+    )
+
+    # 5) Cleanup: delete temporary workgroup when closing sampler
+    s_ath.add_response(
+        "delete_work_group",
+        {},
+        expected_params={
+            "WorkGroup": ANY,
+            "RecursiveDeleteOption": True,
+        },
     )
 
     s_glu.activate()
