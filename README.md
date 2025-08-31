@@ -1,4 +1,4 @@
-````markdown
+
 # catalog-pii-scanner
 
 Universal **PII discovery & tagging** for enterprise metadata catalogs—now with an **AI ensemble**:
@@ -26,19 +26,20 @@ Regex alone misses context and creates noise. We fuse:
 
 ```mermaid
 flowchart LR
-  A[Connectors\n(Hive | Glue | Unity)] --> B[Normalizer]
-  B --> C[Detection Engine]
-  C --> C1[Rules/Regex+Luhn]
-  C --> C2[NER (Presidio/spaCy)]
-  C --> C3[Embeddings Classifier\n(sentence-transformers)]
-  C --> C4[LLM Fallback (optional)]
-  C1 --> D[Ensemble Fusion]
+  A["Connectors: Hive, Glue, Unity"] --> B["Normalizer"]
+  B --> C["Detection Engine"]
+  C --> C1["Rules / Regex + Luhn"]
+  C --> C2["NER (Presidio & spaCy)"]
+  C --> C3["Embeddings Classifier (sentence-transformers)"]
+  C --> C4["LLM Fallback (optional)"]
+  C1 --> D["Ensemble Fusion"]
   C2 --> D
   C3 --> D
   C4 --> D
-  D --> E[Actions\nTag/Comment/Alerts]
-  D --> F[Results Store\n(SQLite/Postgres)]
-  G[Watchers\nPoll | EventBridge | HMS Listener] --> B
+  D --> E["Actions: Tag, Comment, Alerts"]
+  D --> F["Results Store (SQLite, Postgres)"]
+  G["Watchers: Poll, EventBridge, HMS Listener"] --> B
+
 ````
 
 ---
