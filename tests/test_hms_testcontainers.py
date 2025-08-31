@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import time
 from typing import Any
@@ -97,7 +98,7 @@ def test_hms_enumerate_and_writeback_with_container(monkeypatch: Any) -> None:
             except Exception:
                 pass
 
-        # Run CLI scan against HMS and apply tags
+        # Run CLI scan against HMS and apply tags (pass host/port via env)
         runner = CliRunner()
         res = runner.invoke(
             app,
@@ -111,6 +112,11 @@ def test_hms_enumerate_and_writeback_with_container(monkeypatch: Any) -> None:
                 "--append-comment",
                 "PII detected",
             ],
+            env={
+                **os.environ,
+                "HMS_HOST": "127.0.0.1",
+                "HMS_PORT": str(port),
+            },
         )
         assert res.exit_code == 0, res.output
         data = json.loads(res.stdout)
@@ -138,6 +144,11 @@ def test_hms_enumerate_and_writeback_with_container(monkeypatch: Any) -> None:
                 "--append-comment",
                 "PII detected",
             ],
+            env={
+                **os.environ,
+                "HMS_HOST": "127.0.0.1",
+                "HMS_PORT": str(port),
+            },
         )
         assert res2.exit_code == 0
         with hmsclient.HMSClient(host="127.0.0.1", port=port) as cli:  # type: ignore[misc]
