@@ -23,6 +23,7 @@ dependencies = [
   "PyYAML>=6.0.0",
   "SQLAlchemy>=2.0.30",
   "boto3>=1.34.0",
+  "requests>=2.31.0",
 ]
 
 [project.optional-dependencies]

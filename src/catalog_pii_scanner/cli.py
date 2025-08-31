@@ -9,6 +9,7 @@ import uvicorn
 from . import __version__
 from .config import validate_config_file
 from .connectors.glue import GlueCatalogClient
+from .connectors.unity import UnityCatalogClient
 from .datasets import generate_synthetic, load_jsonl, save_jsonl
 from .db import (
     Column as DBColumn,
@@ -91,8 +92,8 @@ def scan(
         if len(parts) >= 2 and parts[1] not in {"*", ""}:
             tbl_pats = [parts[1]]
 
-        client = GlueCatalogClient()
-        cols = list(client.iter_columns(db_patterns=db_pats, table_patterns=tbl_pats))
+        glue_client = GlueCatalogClient()
+        glue_cols = list(glue_client.iter_columns(db_patterns=db_pats, table_patterns=tbl_pats))
         # Print summary JSON to stdout
         out = [
             {
@@ -104,17 +105,65 @@ def scan(
                 "comment": c.comment,
                 "parameters": c.parameters,
             }
-            for c in cols
+            for c in glue_cols
         ]
         typer.echo(json.dumps({"count": len(out), "columns": out}, indent=2))
 
         if apply:
             # Idempotent tag back per column
-            for c in cols:
-                client.update_column_tags(
+            for c in glue_cols:
+                glue_client.update_column_tags(
                     database=c.database,
                     table=c.table,
                     column=c.name,
+                    pii=True,
+                    pii_types=type_ or ["PII"],
+                    append_comment=append_comment,
+                )
+        return
+
+    if target and target.startswith("unity://"):
+        # Enumerate Databricks Unity Catalog
+        pat = target[len("unity://") :].strip()
+        parts = [p for p in pat.split("/") if p]
+        cat_pats = ["*"]
+        sch_pats = ["*"]
+        tbl_pats = ["*"]
+        if len(parts) >= 1 and parts[0] not in {"*", ""}:
+            cat_pats = [parts[0]]
+        if len(parts) >= 2 and parts[1] not in {"*", ""}:
+            sch_pats = [parts[1]]
+        if len(parts) >= 3 and parts[2] not in {"*", ""}:
+            tbl_pats = [parts[2]]
+
+        unity_client = UnityCatalogClient()
+        unity_cols = list(
+            unity_client.iter_columns(
+                catalog_patterns=cat_pats, schema_patterns=sch_pats, table_patterns=tbl_pats
+            )
+        )
+        out = [
+            {
+                "ref": uc.ref,
+                "catalog": uc.catalog,
+                "schema": uc.schema,
+                "table": uc.table,
+                "column": uc.name,
+                "type": uc.type,
+                "comment": uc.comment,
+                "properties": uc.properties,
+            }
+            for uc in unity_cols
+        ]
+        typer.echo(json.dumps({"count": len(out), "columns": out}, indent=2))
+
+        if apply:
+            for uc in unity_cols:
+                unity_client.update_column_tags(
+                    catalog=uc.catalog,
+                    schema=uc.schema,
+                    table=uc.table,
+                    column=uc.name,
                     pii=True,
                     pii_types=type_ or ["PII"],
                     append_comment=append_comment,
