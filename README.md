@@ -94,6 +94,38 @@ Docker build and run the CLI help:
 ```bash
 docker build -t cps .
 docker run --rm cps --help
+
+### Ensemble (MVP) usage
+
+The repo includes a minimal, safe-by-default AI ensemble with redaction guarantees:
+
+- Redaction: rule-detected spans are masked before any model (spaCy/SBERT).
+- Outputs: per-type probabilities for each span candidate.
+- Eval: precision/recall/F1 micro/macro summary.
+
+Commands:
+
+```bash
+# 1) Generate synthetic labeled data
+cps gen-synth synth.jsonl --n 500
+
+# 2) Train the embeddings classifier (sanitized contexts only)
+cps train_embed synth.jsonl --model-dir .models
+
+# 3) Fit calibrator on the dataset
+cps calibrate synth.jsonl --model-dir .models
+
+# 4) Evaluate
+cps eval synth.jsonl --model-dir .models
+
+# 5) Scan a raw text string (returns per-span per-type probabilities)
+cps scan_text "Contact john.doe@example.com or (415) 555-1212"
+```
+
+Acceptance covered:
+- Ensemble returns per-type probabilities (see `cps scan_text` JSON output)
+- Redaction guarantees (no raw PII to models; enforced before spaCy/SBERT)
+- Eval report with precision/recall/F1 (see `cps eval` output)
 ```
 
 ### Repository layout
