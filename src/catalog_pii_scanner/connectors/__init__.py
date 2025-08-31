@@ -1,3 +1,3 @@
 from __future__ import annotations
 
-__all__ = ["glue", "unity"]
+__all__ = ["glue", "unity", "hms"]
