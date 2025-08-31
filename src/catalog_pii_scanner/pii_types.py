@@ -11,6 +11,9 @@ class PIIType(str, Enum):
     CREDIT_CARD = "CREDIT_CARD"
     SSN = "SSN"
     IP_ADDRESS = "IP_ADDRESS"
+    MAC_ADDRESS = "MAC_ADDRESS"
+    AADHAAR = "AADHAAR"
+    PAN = "PAN"
     PERSON = "PERSON"
     ADDRESS = "ADDRESS"
     DATE = "DATE"
@@ -22,6 +25,9 @@ ALL_PII_TYPES: tuple[PIIType, ...] = (
     PIIType.CREDIT_CARD,
     PIIType.SSN,
     PIIType.IP_ADDRESS,
+    PIIType.MAC_ADDRESS,
+    PIIType.AADHAAR,
+    PIIType.PAN,
     PIIType.PERSON,
     PIIType.ADDRESS,
     PIIType.DATE,
