@@ -14,6 +14,7 @@ class _FakeCursor:
         support_tablesample: bool,
         support_rand: bool,
         record: list[str],
+        conn: _FakeConn,
     ) -> None:
         self._all_rows = rows
         self._results: list[tuple[Any]] = []
@@ -21,11 +22,19 @@ class _FakeCursor:
         self._support_ts = support_tablesample
         self._support_rand = support_rand
         self._record = record
+        self._conn = conn
 
     def execute(self, sql: str, params: Iterable[Any] | None = None) -> None:  # noqa: ARG002
+        # If connection is aborted, simulate drivers that reject further commands until rollback
+        if getattr(self._conn, "aborted", False):
+            raise RuntimeError(
+                "current transaction is aborted, commands ignored until end of transaction block"
+            )
         self._record.append(sql)
         s = sql.lower()
         if "tablesample" in s and not self._support_ts:
+            # Mark connection aborted before raising
+            self._conn.aborted = True
             raise RuntimeError("TABLESAMPLE not supported")
         if "order by rand()" in s and not self._support_rand:
             raise RuntimeError("RAND not supported")
@@ -71,6 +80,8 @@ class _FakeConn:
         self.support_rand = support_rand
         self.record = record if record is not None else []
         self.closed = False
+        self.aborted = False
+        self.rollback_calls = 0
 
     def cursor(self) -> _FakeCursor:
         return _FakeCursor(
@@ -78,10 +89,15 @@ class _FakeConn:
             support_tablesample=self.support_tablesample,
             support_rand=self.support_rand,
             record=self.record,
+            conn=self,
         )
 
     def close(self) -> None:  # pragma: no cover - not essential for logic
         self.closed = True
+
+    def rollback(self) -> None:
+        self.rollback_calls += 1
+        self.aborted = False
 
 
 def test_jdbc_sampler_tablesample_first() -> None:
@@ -108,6 +124,8 @@ def test_jdbc_sampler_fallback_to_rand() -> None:
     assert out == [1, 2]
     # Should have used ORDER BY RAND()
     assert any("order by rand" in s.lower() for s in record)
+    # Should have issued a rollback after TABLESAMPLE failure
+    assert fake.rollback_calls == 1
 
 
 def test_jdbc_sampler_fallback_to_limit_only() -> None:
@@ -148,3 +166,18 @@ def test_jdbc_sampler_connection_pooling_reuse() -> None:
     assert calls["n"] == 1  # connection reused from pool
     # All queries should land on the same underlying connection's record
     assert record2 == []
+
+
+def test_jdbc_sampler_recovers_from_aborted_transaction() -> None:
+    # First TABLESAMPLE fails (marks aborted); sampler should rollback and retry with RAND
+    record: list[str] = []
+    fake = _FakeConn(
+        rows=["x", "y", "z"], support_tablesample=False, support_rand=True, record=record
+    )
+
+    sampler = JDBCSampler(conn=fake)
+    out = sampler.sample_column(table="db.tbl", column="c", n=2)
+
+    assert out == ["x", "y"]
+    assert fake.rollback_calls >= 1
+    assert any("order by rand" in s.lower() for s in record)

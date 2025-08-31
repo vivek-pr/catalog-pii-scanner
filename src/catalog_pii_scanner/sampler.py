@@ -133,7 +133,33 @@ class JDBCSampler:
                 rows = cur.fetchall()
             add_rows(rows)
 
-        def _run_sampling(cur: Any) -> None:
+        def _run_sampling(conn: Any) -> None:
+            # Helper to create/refresh cursor with arraysize
+            def _new_cursor() -> Any:
+                c = conn.cursor()
+                try:
+                    if hasattr(c, "arraysize"):
+                        c.arraysize = self.arraysize
+                except Exception:
+                    pass
+                return c
+
+            cur = _new_cursor()
+
+            def _on_error() -> None:
+                nonlocal cur
+                # Roll back aborted transaction if possible; recreate cursor
+                try:
+                    if hasattr(conn, "rollback"):
+                        conn.rollback()
+                except Exception:
+                    pass
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+                cur = _new_cursor()
+
             # 1) TABLESAMPLE with ramping percentages
             if self.prefer_tablesample:
                 for pct in (1, 2, 5, 10, 20, 50, 100):
@@ -148,6 +174,7 @@ class JDBCSampler:
                         _fetch(cur, sql)
                     except Exception:
                         # Likely unsupported; move to next strategy
+                        _on_error()
                         break
 
             # 2) ORDER BY RAND()/rand() LIMIT
@@ -164,6 +191,7 @@ class JDBCSampler:
                         if len(values) >= n:
                             break
                     except Exception:
+                        _on_error()
                         continue
 
             # 3) Plain LIMIT as last resort
@@ -173,35 +201,22 @@ class JDBCSampler:
                     _fetch(cur, sql)
                 except Exception:
                     # give up
+                    _on_error()
                     pass
 
-        # Acquire connection (pooled or direct)
-        if self._pool is not None:
-            with self._pool.acquire() as conn:
-                cur = conn.cursor()
-                try:
-                    if hasattr(cur, "arraysize"):
-                        cur.arraysize = self.arraysize
-                except Exception:
-                    pass
-                _run_sampling(cur)
-                try:
-                    cur.close()
-                except Exception:
-                    pass
-        else:
-            assert self._conn is not None
-            cur = self._conn.cursor()
-            try:
-                if hasattr(cur, "arraysize"):
-                    cur.arraysize = self.arraysize
-            except Exception:
-                pass
-            _run_sampling(cur)
+            # best-effort close
             try:
                 cur.close()
             except Exception:
                 pass
+
+        # Acquire connection (pooled or direct)
+        if self._pool is not None:
+            with self._pool.acquire() as conn:
+                _run_sampling(conn)
+        else:
+            assert self._conn is not None
+            _run_sampling(self._conn)
 
         return values[:n]
 
