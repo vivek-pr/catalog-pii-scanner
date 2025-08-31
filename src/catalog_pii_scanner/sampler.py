@@ -184,8 +184,7 @@ class JDBCSampler:
                         break
                     try:
                         sql = (
-                            f"SELECT {column} FROM {table}{_where_clause()} "
-                            f"ORDER BY {fn} LIMIT {n}"
+                            f"SELECT {column} FROM {table}{_where_clause()} ORDER BY {fn} LIMIT {n}"
                         )
                         _fetch(cur, sql)
                         if len(values) >= n:

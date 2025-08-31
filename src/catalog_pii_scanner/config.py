@@ -15,6 +15,9 @@ class NERConfig(BaseModel):
     enabled: bool = True
     provider: Literal["presidio", "spacy"] = "presidio"
     confidence_min: float = Field(0.60, ge=0.0, le=1.0)
+    # Language code hint (e.g., 'en'). For spaCy, optionally specify model name.
+    language: str = "en"
+    spacy_model: str | None = None
 
 
 class EmbeddingsFeaturesConfig(BaseModel):

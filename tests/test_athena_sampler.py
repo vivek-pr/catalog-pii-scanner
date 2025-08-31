@@ -66,7 +66,7 @@ def test_athena_sampler_samples_with_not_ready_then_success() -> None:
         {"QueryExecutionId": "q-123"},
         expected_params={
             "QueryString": (
-                "SELECT email FROM users WHERE email IS NOT NULL " "ORDER BY rand() LIMIT 2"
+                "SELECT email FROM users WHERE email IS NOT NULL ORDER BY rand() LIMIT 2"
             ),
             "WorkGroup": ANY,
             "QueryExecutionContext": {"Database": "demo"},
