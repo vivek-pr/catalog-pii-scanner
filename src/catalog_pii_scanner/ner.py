@@ -158,9 +158,17 @@ def detect_ner_spans(
     - Applies confidence gating from cfg if provided (post-filter at consumer if custom).
     - Returns a list aligned to the input texts; each entry is a list of NERSpan.
     """
-    cfg = cfg or NERConfig()
+    # Be explicit for mypy: provide all named args to satisfy BaseModel constructor typing
+    cfg = cfg or NERConfig(
+        enabled=True,
+        provider="presidio",
+        confidence_min=0.60,
+        language="en",
+        spacy_model=None,
+    )
     prov = provider or get_provider(cfg)
-    all_spans = prov.analyze_batch(texts, language=cfg.language)
+    # Call with positional arg to be robust to provider signatures
+    all_spans = prov.analyze_batch(texts, cfg.language)
     # Apply global gating
     gated: list[list[NERSpan]] = []
     for spans in all_spans:
