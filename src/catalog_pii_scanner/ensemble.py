@@ -159,7 +159,8 @@ def fit_calibrator(
         # Build dataset: x=raw_score_t, y=1 if label==t else 0
         X = [[rs.get(t, 0.0)] for rs in raw_scores]
         y = [1 if (lbl == t) else 0 for lbl in true_labels]
-        if sum(y) == 0 or LogisticRegression is None:
+        # Guard both extremes: no positives OR all positives -> fallback to identity
+        if sum(y) == 0 or sum(y) == len(y) or LogisticRegression is None:
             models[t] = (1.0, 0.0)
             continue
         lr = LogisticRegression(solver="liblinear")
