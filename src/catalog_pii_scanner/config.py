@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal, cast
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 
@@ -32,7 +32,7 @@ class EmbeddingsConfig(BaseModel):
     enabled: bool = True
     model: str = "sentence-transformers/all-MiniLM-L6-v2"
     device: Literal["cpu", "cuda"] = "cpu"
-    features: EmbeddingsFeaturesConfig = Field(default_factory=EmbeddingsFeaturesConfig)
+    features: EmbeddingsFeaturesConfig = Field(default_factory=lambda: EmbeddingsFeaturesConfig())
 
 
 class EnsembleWeights(BaseModel):
@@ -55,7 +55,9 @@ class EnsembleConfig(BaseModel):
     model_config = {
         "extra": "forbid",
     }
-    weights: EnsembleWeights = Field(default_factory=EnsembleWeights)
+    weights: EnsembleWeights = Field(
+        default_factory=lambda: EnsembleWeights(rules=0.4, ner=0.3, embed=0.3)
+    )
     decision_threshold: float = Field(0.55, ge=0.0, le=1.0)
 
 
@@ -78,10 +80,34 @@ class AIConfig(BaseModel):
         "extra": "forbid",
     }
     mode: Literal["rules", "ensemble", "ensemble+llm"] = "ensemble"
-    ner: NERConfig = Field(default_factory=NERConfig)
-    embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
-    ensemble: EnsembleConfig = Field(default_factory=EnsembleConfig)
-    llm: LLMConfig = Field(default_factory=LLMConfig)
+    ner: NERConfig = Field(
+        default_factory=lambda: NERConfig(enabled=True, provider="presidio", confidence_min=0.60)
+    )
+    embeddings: EmbeddingsConfig = Field(
+        default_factory=lambda: EmbeddingsConfig(
+            enabled=True,
+            model="sentence-transformers/all-MiniLM-L6-v2",
+            device="cpu",
+            features=EmbeddingsFeaturesConfig(from_metadata=True, from_samples=True),
+        )
+    )
+    ensemble: EnsembleConfig = Field(
+        default_factory=lambda: EnsembleConfig(
+            weights=EnsembleWeights(rules=0.4, ner=0.3, embed=0.3), decision_threshold=0.55
+        )
+    )
+    llm: LLMConfig = Field(
+        default_factory=lambda: LLMConfig(
+            enabled=False,
+            provider="local",
+            model="llama3-8b-instruct",
+            max_tokens=256,
+            temperature=0.0,
+            redact=True,
+            cost_cap_usd_per_scan=0.50,
+            cache_ttl_minutes=1440,
+        )
+    )
 
 
 class AppConfig(BaseModel):
