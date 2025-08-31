@@ -72,6 +72,50 @@ pip install -U pip wheel
 pip install -e ".[full,ml]"   # extras: full, ml, llm, spark
 ```
 
+### Dev skeleton (this repo)
+
+For local development using the baseline skeleton:
+
+```bash
+make setup        # create venv, install deps, install pre-commit
+make test         # run tests
+make fmt && make lint
+
+# CLI help
+cps --help
+
+# Run FastAPI stub (two options)
+make run-api                       # uvicorn with reload
+cps serve --host 0.0.0.0 --port 8000 --reload
+```
+
+Docker build and run the CLI help:
+
+```bash
+docker build -t cps .
+docker run --rm cps --help
+```
+
+### Repository layout
+
+```
+catalog-pii-scanner/
+├─ src/
+│  └─ catalog_pii_scanner/
+│     ├─ __init__.py           # version
+│     ├─ cli.py                # Typer CLI (cps)
+│     └─ api.py                # FastAPI stub (GET /healthz)
+├─ tests/                      # pytest
+│  ├─ test_cli.py
+│  └─ test_api.py
+├─ pyproject.toml              # packaging + tooling config
+├─ Makefile                    # setup / fmt / lint / test
+├─ .pre-commit-config.yaml     # ruff, black, mypy
+├─ Dockerfile                  # non-root runtime image
+├─ .dockerignore
+└─ .gitignore
+```
+
 ### Minimal run (deterministic + NER + embeddings; no LLM)
 
 ```bash
@@ -155,5 +199,3 @@ cps serve --port 8080 --config config/config.yaml
 * v0.1-ML-MVP: ensemble, eval harness, tag-back, CI
 * v0.2-Realtime-LLM: listeners, LLM fallback, active learning + review UI
 * v0.3-Scale-MLOps: Spark inference, MLflow registry, drift monitoring
-
-
