@@ -199,12 +199,15 @@ def safe_log(
     - If `text` is provided, logs only its redacted form as `redacted_text`.
     """
     logger = get_logger()
-    spans = _dedupe_spans(pii_spans or [])
+    # Preserve duplicate spans for redact_text to ensure all occurrences are masked.
+    orig_spans: list[Span] = list(pii_spans or [])
+    # For scrubbing structured details, dedupe by text to avoid redundant replacements.
+    spans_deduped = _dedupe_spans(orig_spans)
 
     payload: dict[str, Any] = {"event": event}
-    if text is not None and spans:
-        payload["redacted_text"] = redact_text(text, spans).redacted_text
+    if text is not None and orig_spans:
+        payload["redacted_text"] = redact_text(text, orig_spans).redacted_text
     if details:
-        payload.update(_scrub_obj(details, spans))
+        payload.update(_scrub_obj(details, spans_deduped))
 
     logger.log(level, payload)
