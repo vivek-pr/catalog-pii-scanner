@@ -241,24 +241,113 @@ class GlueCatalogClient:
 def _table_to_input(tbl: dict[str, Any]) -> dict[str, Any]:
     """Convert Glue GetTable output to a valid TableInput for UpdateTable.
 
-    Drops read-only fields.
+    Strictly whitelist allowed TableInput fields and sanitize nested shapes to
+    avoid InvalidInputException from read-only/unknown fields in GetTable output.
     """
-    drop_keys = {
-        "DatabaseName",
-        "CreateTime",
-        "UpdateTime",
-        "CreatedBy",
-        "IsRegisteredWithLakeFormation",
-        "CatalogId",
-        "VersionId",
-        "FederatedTable",
+    allowed_table_keys = {
+        # Required
+        "Name",
+        # Optional
+        "Description",
+        "Owner",
+        "Retention",
+        "StorageDescriptor",
+        "PartitionKeys",
+        "ViewOriginalText",
+        "ViewExpandedText",
+        "TableType",
+        "Parameters",
+        "TargetTable",
     }
-    ti = {k: v for k, v in tbl.items() if k not in drop_keys}
-    # Deep-copy and drop sub-keys if present
-    ti = copy.deepcopy(ti)
-    # Ensure required fields exist minimally
+
+    def _sanitize_column(col: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"Name", "Type", "Comment", "Parameters"}
+        return {k: v for k, v in col.items() if k in allowed}
+
+    def _sanitize_serde(info: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"Name", "SerializationLibrary", "Parameters"}
+        return {k: v for k, v in info.items() if k in allowed}
+
+    def _sanitize_order(ord_: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"Column", "SortOrder"}
+        return {k: v for k, v in ord_.items() if k in allowed}
+
+    def _sanitize_skewed(info: dict[str, Any]) -> dict[str, Any]:
+        allowed = {
+            "SkewedColumnNames",
+            "SkewedColumnValues",
+            "SkewedColumnValueLocationMaps",
+        }
+        return {k: v for k, v in info.items() if k in allowed}
+
+    def _sanitize_schema_ref(ref: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"SchemaId", "SchemaVersionId", "SchemaVersionNumber"}
+        out = {k: v for k, v in ref.items() if k in allowed}
+        if "SchemaId" in out and isinstance(out["SchemaId"], dict):
+            sid_allowed = {"SchemaArn", "SchemaName", "RegistryName"}
+            out["SchemaId"] = {k: v for k, v in out["SchemaId"].items() if k in sid_allowed}
+        return out
+
+    def _sanitize_storage_descriptor(sd: dict[str, Any]) -> dict[str, Any]:
+        allowed = {
+            "Columns",
+            "Location",
+            "AdditionalLocations",
+            "InputFormat",
+            "OutputFormat",
+            "Compressed",
+            "NumberOfBuckets",
+            "SerdeInfo",
+            "BucketColumns",
+            "SortColumns",
+            "Parameters",
+            "SkewedInfo",
+            "StoredAsSubDirectories",
+            "SchemaReference",
+        }
+        sdo = {k: v for k, v in sd.items() if k in allowed}
+        if "Columns" in sdo and isinstance(sdo["Columns"], list):
+            sdo["Columns"] = [_sanitize_column(c) for c in sdo["Columns"] if isinstance(c, dict)]
+        if "SerdeInfo" in sdo and isinstance(sdo["SerdeInfo"], dict):
+            sdo["SerdeInfo"] = _sanitize_serde(sdo["SerdeInfo"])  # type: ignore[assignment]
+        if "SortColumns" in sdo and isinstance(sdo["SortColumns"], list):
+            sdo["SortColumns"] = [
+                _sanitize_order(o) for o in sdo["SortColumns"] if isinstance(o, dict)
+            ]
+        if "SkewedInfo" in sdo and isinstance(sdo["SkewedInfo"], dict):
+            sdo["SkewedInfo"] = _sanitize_skewed(sdo["SkewedInfo"])  # type: ignore[assignment]
+        if "SchemaReference" in sdo and isinstance(sdo["SchemaReference"], dict):
+            sdo["SchemaReference"] = _sanitize_schema_ref(sdo["SchemaReference"])  # type: ignore[assignment]
+        return sdo
+
+    def _sanitize_partition_keys(pks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [_sanitize_column(c) for c in pks if isinstance(c, dict)]
+
+    def _sanitize_target_table(tt: dict[str, Any]) -> dict[str, Any]:
+        allowed = {"CatalogId", "DatabaseName", "Name"}
+        return {k: v for k, v in tt.items() if k in allowed}
+
+    # Build whitelisted table
+    ti: dict[str, Any] = {}
+    for k in allowed_table_keys:
+        if k not in tbl:
+            continue
+        v = tbl[k]
+        if k == "StorageDescriptor" and isinstance(v, dict):
+            ti[k] = _sanitize_storage_descriptor(v)
+        elif k == "PartitionKeys" and isinstance(v, list):
+            ti[k] = _sanitize_partition_keys(v)
+        elif k == "TargetTable" and isinstance(v, dict):
+            ti[k] = _sanitize_target_table(v)
+        else:
+            ti[k] = copy.deepcopy(v)
+
+    # Ensure minimal required defaults exist
     ti.setdefault("Name", tbl.get("Name"))
-    ti.setdefault("StorageDescriptor", tbl.get("StorageDescriptor") or {})
+    ti.setdefault(
+        "StorageDescriptor",
+        _sanitize_storage_descriptor(tbl.get("StorageDescriptor", {}) or {}),
+    )
     ti.setdefault("Parameters", tbl.get("Parameters") or {})
     ti.setdefault("TableType", tbl.get("TableType") or "EXTERNAL_TABLE")
     return ti
