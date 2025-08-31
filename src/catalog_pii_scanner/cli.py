@@ -7,6 +7,7 @@ import typer
 import uvicorn
 
 from . import __version__
+from .config import validate_config_file
 from .datasets import generate_synthetic, load_jsonl, save_jsonl
 from .embeddings import EmbedModel
 from .ensemble import Calibrator, Ensemble
@@ -15,6 +16,7 @@ from .pii_types import PIIType
 from .rules import propose_candidates
 
 app = typer.Typer(help="Catalog PII Scanner CLI")
+config_app = typer.Typer(help="Config utilities")
 
 
 def version_callback(value: bool) -> None:
@@ -181,6 +183,24 @@ def eval(
         f"f1={rep.macro['f1']:.3f}"
     )
     typer.echo("\n".join(lines))
+
+
+@config_app.command("validate")
+def config_validate(
+    file: str = typer.Option(..., "-f", "--file", help="Path to config YAML"),
+    env_prefix: str = typer.Option("CPS_", "--env-prefix", help="ENV override prefix"),
+) -> None:
+    """Validate a configuration file, applying env overrides if present."""
+    cfg, errors = validate_config_file(file, env_prefix=env_prefix)
+    if errors:
+        typer.echo("Config invalid:")
+        for e in errors:
+            typer.echo(f"  - {e}")
+        raise typer.Exit(code=1)
+    typer.echo("Config OK")
+
+
+app.add_typer(config_app, name="config")
 
 
 def main() -> None:
