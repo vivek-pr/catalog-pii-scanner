@@ -8,6 +8,7 @@ import uvicorn
 
 from . import __version__
 from .config import validate_config_file
+from .connectors.glue import GlueCatalogClient
 from .datasets import generate_synthetic, load_jsonl, save_jsonl
 from .db import (
     Column as DBColumn,
@@ -54,6 +55,9 @@ def main_callback(
 @app.command()
 def scan(
     path: str | None = typer.Argument(None, help="Path to scan for PII (placeholder)"),
+    target: str | None = typer.Option(
+        None, "--target", help="Target URI, e.g., glue://* or glue://db/*"
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Write findings to the results store (no tagging)"
     ),
@@ -69,8 +73,54 @@ def scan(
     hit_rate: float = typer.Option(0.5, "--hit-rate", help="Hit rate [0-1]"),
     model_version: str = typer.Option("v0", "--model-version", help="Model version label"),
     source: str = typer.Option("cli", "--source", help="Source of the scan"),
+    apply: bool = typer.Option(False, "--apply", help="Apply tags/comments back to the catalog"),
+    append_comment: str | None = typer.Option(
+        None, "--append-comment", help="Optional comment to append to column description"
+    ),
 ) -> None:
     """Scan and persist results. With --dry-run, writes to SQLite/Postgres only."""
+    # New: Targeted connector route
+    if target and target.startswith("glue://"):
+        # Enumerate AWS Glue Data Catalog
+        pat = target[len("glue://") :].strip()
+        parts = [p for p in pat.split("/") if p]
+        db_pats = ["*"]
+        tbl_pats = ["*"]
+        if len(parts) >= 1 and parts[0] not in {"*", ""}:
+            db_pats = [parts[0]]
+        if len(parts) >= 2 and parts[1] not in {"*", ""}:
+            tbl_pats = [parts[1]]
+
+        client = GlueCatalogClient()
+        cols = list(client.iter_columns(db_patterns=db_pats, table_patterns=tbl_pats))
+        # Print summary JSON to stdout
+        out = [
+            {
+                "ref": c.ref,
+                "database": c.database,
+                "table": c.table,
+                "column": c.name,
+                "type": c.type,
+                "comment": c.comment,
+                "parameters": c.parameters,
+            }
+            for c in cols
+        ]
+        typer.echo(json.dumps({"count": len(out), "columns": out}, indent=2))
+
+        if apply:
+            # Idempotent tag back per column
+            for c in cols:
+                client.update_column_tags(
+                    database=c.database,
+                    table=c.table,
+                    column=c.name,
+                    pii=True,
+                    pii_types=type_ or ["PII"],
+                    append_comment=append_comment,
+                )
+        return
+
     if path:
         typer.echo(f"Scanning path: {path}")
     if not dry_run:
