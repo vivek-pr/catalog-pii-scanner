@@ -11,6 +11,7 @@ except Exception:  # pragma: no cover
     LogisticRegression = None  # type: ignore
 
 from .embeddings import EmbedModel
+from .logging_utils import safe_log
 from .ner import ner_context_signals
 from .pii_types import ALL_PII_TYPES, Candidate, PIIType, Prediction
 from .redaction import contexts_for_candidates
@@ -68,6 +69,23 @@ class Ensemble:
     def predict(self, text: str, candidates: list[Candidate]) -> list[Prediction]:
         # Build sanitized contexts
         contexts = contexts_for_candidates(text, candidates, window=48)
+        # Safe structured log about sanitized inputs
+        try:
+            import logging
+
+            safe_log(
+                event="scan_contexts",
+                details={
+                    "n_candidates": len(candidates),
+                    "examples": [contexts[i] for i in range(min(3, len(candidates)))],
+                },
+                level=logging.DEBUG,
+                text=text,
+                pii_spans=[c.span for c in candidates],
+            )
+        except Exception:
+            # Logging must never break prediction
+            pass
         # NER context signals (sanitized)
         ner_sig = ner_context_signals(contexts)
         # Embedding predictions on sanitized snippets (candidate masked in context)
