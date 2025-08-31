@@ -9,6 +9,16 @@ import uvicorn
 from . import __version__
 from .config import validate_config_file
 from .datasets import generate_synthetic, load_jsonl, save_jsonl
+from .db import (
+    Column as DBColumn,
+)
+from .db import (
+    Finding,
+    add_finding,
+    init_db,
+    session_scope,
+    upsert_column,
+)
 from .embeddings import EmbedModel
 from .ensemble import Calibrator, Ensemble
 from .eval import calibrate_on_dataset, run_eval
@@ -17,6 +27,9 @@ from .rules import propose_candidates
 
 app = typer.Typer(help="Catalog PII Scanner CLI")
 config_app = typer.Typer(help="Config utilities")
+
+# Define option defaults at module scope to satisfy Ruff B008
+TYPE_OPT = typer.Option([], "--type", help="Detected PII type(s), e.g., EMAIL. Can repeat.")
 
 
 def version_callback(value: bool) -> None:
@@ -40,10 +53,58 @@ def main_callback(
 
 @app.command()
 def scan(
-    path: str = typer.Argument(..., help="Path to scan for PII"),
+    path: str | None = typer.Argument(None, help="Path to scan for PII (placeholder)"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Write findings to the results store (no tagging)"
+    ),
+    db: str = typer.Option(
+        "sqlite:///cps.db", "--db", help="Database URL for results (SQLite or Postgres)"
+    ),
+    catalog: str = typer.Option("default", "--catalog", help="Catalog name"),
+    schema: str = typer.Option("public", "--schema", help="Schema name"),
+    table: str = typer.Option("files", "--table", help="Table name"),
+    column: str = typer.Option("path", "--column", help="Column name"),
+    type_: list[str] = TYPE_OPT,
+    confidence: float = typer.Option(0.9, "--confidence", help="Confidence score [0-1]"),
+    hit_rate: float = typer.Option(0.5, "--hit-rate", help="Hit rate [0-1]"),
+    model_version: str = typer.Option("v0", "--model-version", help="Model version label"),
+    source: str = typer.Option("cli", "--source", help="Source of the scan"),
 ) -> None:
-    """Scan the given PATH for PII (stub)."""
-    typer.echo(f"Scanning path: {path}")
+    """Scan and persist results. With --dry-run, writes to SQLite/Postgres only."""
+    if path:
+        typer.echo(f"Scanning path: {path}")
+    if not dry_run:
+        # For now, only dry-run writes results in this skeleton
+        typer.echo("Hint: use --dry-run to write findings to the DB")
+        return
+    # Initialize DB and persist a single finding for the provided target
+    Session = init_db(db)
+    with session_scope(Session) as s:
+        col: DBColumn = upsert_column(s, catalog=catalog, schema=schema, table=table, column=column)
+        types = type_ or ["EMAIL"]
+        f = add_finding(
+            s,
+            col,
+            types=types,
+            confidence=confidence,
+            hit_rate=hit_rate,
+            model_version=model_version,
+            source=source,
+        )
+        typer.echo(
+            json.dumps(
+                {
+                    "id": f.id,
+                    "column_ref": f.column_ref,
+                    "types": f.types,
+                    "confidence": f.confidence,
+                    "hit_rate": f.hit_rate,
+                    "model_version": f.model_version,
+                    "scanned_at": f.scanned_at.isoformat(),
+                    "source": f.source,
+                }
+            )
+        )
 
 
 @app.command()
@@ -198,6 +259,88 @@ def config_validate(
             typer.echo(f"  - {e}")
         raise typer.Exit(code=1)
     typer.echo("Config OK")
+
+
+@app.command()
+def export(
+    format: str = typer.Option("json", "--format", help="Output format: json|csv"),
+    out: str = typer.Option("-", "--out", help="Output file path or '-' for stdout"),
+    db: str = typer.Option("sqlite:///cps.db", "--db", help="Database URL for results"),
+) -> None:
+    """Export findings from the results store as JSON or CSV."""
+    fmt = format.lower()
+    if fmt not in {"json", "csv"}:
+        raise typer.BadParameter("--format must be 'json' or 'csv'")
+    Session = init_db(db)
+    from sqlalchemy import select
+
+    rows: list[dict] = []
+    with session_scope(Session) as s:
+        res = s.execute(select(Finding))
+        for f in res.scalars():
+            rows.append(
+                {
+                    "id": f.id,
+                    "column_ref": f.column_ref,
+                    "types": f.types,
+                    "confidence": f.confidence,
+                    "hit_rate": f.hit_rate,
+                    "model_version": f.model_version,
+                    "scanned_at": f.scanned_at.isoformat(),
+                    "source": f.source,
+                }
+            )
+
+    if fmt == "json":
+        data = json.dumps(rows, indent=2)
+        if out == "-":
+            typer.echo(data)
+        else:
+            Path(out).write_text(data, encoding="utf-8")
+            typer.echo(f"Wrote {len(rows)} findings to {out}")
+    else:
+        # CSV
+        import csv
+
+        headers = [
+            "id",
+            "column_ref",
+            "types",
+            "confidence",
+            "hit_rate",
+            "model_version",
+            "scanned_at",
+            "source",
+        ]
+        if out == "-":
+            # write to stdout
+            import sys
+
+            w = csv.DictWriter(sys.stdout, fieldnames=headers)
+            w.writeheader()
+            for r in rows:
+                r = {
+                    **r,
+                    "types": (
+                        ",".join(r["types"]) if isinstance(r.get("types"), list) else r.get("types")
+                    ),
+                }
+                w.writerow(r)
+        else:
+            with open(out, "w", newline="", encoding="utf-8") as fh:
+                w = csv.DictWriter(fh, fieldnames=headers)
+                w.writeheader()
+                for r in rows:
+                    r = {
+                        **r,
+                        "types": (
+                            ",".join(r["types"])
+                            if isinstance(r.get("types"), list)
+                            else r.get("types")
+                        ),
+                    }
+                    w.writerow(r)
+            typer.echo(f"Wrote {len(rows)} findings to {out}")
 
 
 app.add_typer(config_app, name="config")
