@@ -58,10 +58,31 @@ class SpaCyProvider(NERProvider):
         nlp = _load_spacy(self.model, language)
         out: list[list[NERSpan]] = []
         if nlp is None:
-            return [[] for _ in texts]
+            # Fallback: PERSON disabled, but still detect EMAIL/PHONE via regex
+            for text in texts:
+                spans: list[NERSpan] = []
+                for m in EMAIL_RE.finditer(text):
+                    spans.append(
+                        NERSpan(
+                            span=Span(m.start(), m.end(), m.group(0)),
+                            label=PIIType.EMAIL,
+                            score=0.99,
+                        )
+                    )
+                for m in PHONE_US_RE.finditer(text):
+                    spans.append(
+                        NERSpan(
+                            span=Span(m.start(), m.end(), m.group(0)),
+                            label=PIIType.PHONE_NUMBER,
+                            score=0.90,
+                        )
+                    )
+                out.append(spans)
+            return out
+
         docs = list(nlp.pipe(texts, disable=["tagger", "lemmatizer"]))
         for text, doc in zip(texts, docs, strict=False):
-            spans: list[NERSpan] = []
+            spans = []
             # PERSON via spaCy ents
             for ent in getattr(doc, "ents", []) or []:
                 if ent.label_ == "PERSON":
@@ -78,7 +99,9 @@ class SpaCyProvider(NERProvider):
             for m in EMAIL_RE.finditer(text):
                 spans.append(
                     NERSpan(
-                        span=Span(m.start(), m.end(), m.group(0)), label=PIIType.EMAIL, score=0.99
+                        span=Span(m.start(), m.end(), m.group(0)),
+                        label=PIIType.EMAIL,
+                        score=0.99,
                     )
                 )
             # PHONE via robust regex
