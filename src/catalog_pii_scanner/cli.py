@@ -26,6 +26,7 @@ from .embeddings import EmbedModel
 from .ensemble import Calibrator, Ensemble
 from .eval import calibrate_on_dataset, run_eval
 from .pii_types import PIIType
+from .redaction import token_for_label
 from .rules import propose_candidates
 
 app = typer.Typer(help="Catalog PII Scanner CLI")
@@ -316,12 +317,11 @@ def train_embed(
             start = max(0, span.start - 48)
             end = min(len(ex.text), span.end + 48)
             ctx = ex.text[start:end]
-            # sanitize: replace the PII span with shape-preserving mask
-            masked_ctx = (
-                ctx[: span.start - start]
-                + ("0" * (span.end - span.start))
-                + ctx[span.end - start :]
-            )
+            # sanitize: replace the PII span with a bracket token like [EMAIL]
+            tok = token_for_label(lbl)
+            l_off = span.start - start
+            r_off = span.end - start
+            masked_ctx = ctx[:l_off] + tok + ctx[r_off:]
             texts.append(masked_ctx)
             labels.append(lbl)
     embed.fit(texts, labels)
