@@ -22,7 +22,9 @@ def _random_email() -> str:
 
 def _random_phone() -> str:
     # US-like phone
-    return f"({random.randint(200,999)}) {random.randint(200,999):03d}-{random.randint(0,9999):04d}"
+    return (
+        f"({random.randint(200, 999)}) {random.randint(200, 999):03d}-{random.randint(0, 9999):04d}"
+    )
 
 
 def _luhnify(base16: str) -> str:
@@ -49,7 +51,9 @@ def _random_cc() -> str:
 
 
 def _random_ssn() -> str:
-    return f"{random.randint(100,999)}-{random.randint(10,99):02d}-{random.randint(1000,9999):04d}"
+    return (
+        f"{random.randint(100, 999)}-{random.randint(10, 99):02d}-{random.randint(1000, 9999):04d}"
+    )
 
 
 def _random_ip() -> str:

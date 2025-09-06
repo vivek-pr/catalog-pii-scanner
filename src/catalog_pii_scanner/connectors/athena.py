@@ -113,7 +113,7 @@ class AthenaSampler:
             where_clause = " WHERE " + " AND ".join(parts)
 
         # Order randomly to get samples; LIMIT caps the output size
-        sql = f"SELECT {column} FROM {table}{where_clause} " f"ORDER BY rand() LIMIT {n}"
+        sql = f"SELECT {column} FROM {table}{where_clause} ORDER BY rand() LIMIT {n}"
         qid = self._start_query(sql, database)
         self._wait(qid)
         rows = self._collect_results(qid, max_rows=n)
